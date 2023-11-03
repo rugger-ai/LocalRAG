@@ -12,6 +12,9 @@ import argparse
 from torch import cuda as torch_cuda
 from langchain import PromptTemplate
 from langchain.chains import LLMChain
+import sqlite3
+import pprint
+
 
 load_dotenv()
 
@@ -26,18 +29,33 @@ max_tokens_generated = os.environ.get('MAX_TOKENS_GENERATED')
 is_gpu_enabled = (os.environ.get('IS_GPU_ENABLED', 'False').lower() == 'true')
 target_source_chunks = int(os.environ.get('TARGET_SOURCE_CHUNKS',4))
 
-# Open and split the source document
-data = open("titanic_json.txt").read().split("}")
+def get_gpu_memory() -> int:
+    """
+    Returns the amount of free memory in MB for each GPU.
+    """
+    return int(torch_cuda.mem_get_info()[0]/(1024**2))
 
-print("Creating Embeddings....")
+def calculate_layer_count() -> int | None:
+    """
+    Calculates the number of layers that can be used on the GPU.
+    """
+    if not is_gpu_enabled:
+        return None
+    LAYER_SIZE_MB = 120.6 # This is the size of a single layer on VRAM, and is an approximation.
+    # The current set value is for 7B models. For other models, this value should be changed.
+    LAYERS_TO_REDUCE = 6 # About 700 MB is needed for the LLM to run, so we reduce the layer count by 6 to be safe.
+    if (get_gpu_memory()//LAYER_SIZE_MB) - LAYERS_TO_REDUCE > 32:
+        return 32
+    else:
+        return (get_gpu_memory()//LAYER_SIZE_MB-LAYERS_TO_REDUCE)
 
 # Create embeddings
+print("Loading Embeddings model....")
 embeddings = Embeddings(hybrid=True, path="sentence-transformers/nli-mpnet-base-v2")
 
-print("Indexing Embeddings...")
-
-# Create an index for the embeddings
-embeddings.index(data)
+#load the embeddings from saved embeddings
+print("Loading Embeddings...")
+embeddings.load("db")
 
 # Instantiate the LLM
 llamallm = LlamaCpp(model_path=model_path, max_tokens = max_tokens_generated, temperature = model_temperature, n_ctx = model_n_ctx, verbose=False, n_gpu_layers=15)
@@ -60,15 +78,24 @@ def talk_to_LLM(question, history):
     # Extract uid of first result
     # search result format: (uid, score)
     # return the top N results
+    connection = sqlite3.connect("db/embeddings.db")
+    cursor = connection.cursor()
+
+
     uid = embeddings.search(question, 5)
 
     embeddingSearchResults = ""
     
     for uid, score in uid:
         #print("  %s" % data[uid])
-        embeddingSearchResults += data[uid]
+        cursor.execute(
+        'SELECT * FROM chunks LIMIT 1 offset (?)', (uid,))
+        results = cursor.fetchall()
+        embeddingSearchResults += str(results)
+
 
     print("Embeddings Search Results:")
+    embeddingSearchResults = embeddingSearchResults.replace(r'\n', '\n')
     print(embeddingSearchResults)
     
     if question != "":
