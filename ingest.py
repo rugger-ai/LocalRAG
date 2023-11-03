@@ -26,10 +26,10 @@ from langchain.document_loaders import (
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
+
 from langchain.docstore.document import Document
 from constants import CHROMA_SETTINGS
-
+from txtai import Embeddings
 
 load_dotenv()
 
@@ -41,6 +41,7 @@ embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME')
 is_gpu_enabled = (os.environ.get('IS_GPU_ENABLED', 'False').lower() == 'true')
 chunk_size = 500
 chunk_overlap = 50
+
 
 
 # Custom document loaders
@@ -82,6 +83,7 @@ LOADER_MAPPING = {
     ".ppt": (UnstructuredPowerPointLoader, {}),
     ".pptx": (UnstructuredPowerPointLoader, {}),
     ".txt": (TextLoader, {"encoding": "utf8"})
+    #".json": (JSONLoader, {"jq_schema":'.', "text_content":False})
     # Add more mappings for other file extensions and loaders as needed
 }
 
@@ -123,12 +125,13 @@ def process_documents(ignored_files: List[str] = []) -> List[Document]:
     documents = load_documents(source_directory, ignored_files)
     if not documents:
         print("No new documents to load")
-        exit(0)
-    print(f"Loaded {len(documents)} new documents from {source_directory}")
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    texts = text_splitter.split_documents(documents)
-    print(f"Split into {len(texts)} chunks of text (max. {chunk_size} tokens each)")
-    return texts
+        #exit(0)
+    else:
+        print(f"Loaded {len(documents)} new documents from {source_directory}")
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        texts = text_splitter.split_documents(documents)
+        print(f"Split into {len(texts)} chunks of text (max. {chunk_size} tokens each)")
+        return texts
     
 
 def does_vectorstore_exist(persist_directory: str) -> bool:
@@ -143,6 +146,17 @@ def does_vectorstore_exist(persist_directory: str) -> bool:
             if len(list_index_files) > 3:
                 return True
     return False
+
+def split_json():
+    docs = os.listdir(source_directory)
+    data = []
+    if len(docs) > 0:
+        for doc in docs:
+            extension = doc.split('.')[1]
+            if extension == "json":
+                items = open(source_directory + "/" + doc).read().split("}")
+                data += items
+    return data
 
 def main():
     # Create embeddings
@@ -169,19 +183,43 @@ def main():
 
     print(f"Ingestion complete! You can now run privateGPT.py to query your documents")
     """
+    
+    # todo: automatically create database, delete existing one
     connection = sqlite3.connect("db/embeddings.db")
     cursor = connection.cursor()
+    cursor.execute('CREATE TABLE chunks (chunks string)')
+
+    print("loading embeddings model")
+    embeddings = Embeddings(hybrid=True, path="sentence-transformers/nli-mpnet-base-v2")
+
+    texts = []
+
+    nonJsonDocs = process_documents()
+    if nonJsonDocs:
+        texts += nonJsonDocs
+
+    jsonDocs = split_json()
+    if jsonDocs:
+        texts += split_json()
+
+    collectedStrings = []
     
-    texts = process_documents()
     for text in texts:
-        print("\n\n" + str(text).split("metadata")[0].strip("page_content='"))
+        print("\n\n" + str(text))
+        collectedStrings.append(str(text))
         #cursor.execute("INSERT INTO chunks VALUES (?)", (str(text).split("metadata")[0].strip("page_content='"),))
 
         cursor.execute(
         'INSERT INTO chunks VALUES (?)',
-        (str(text).split("metadata")[0].strip("page_content='"),)
+        (str(text),)
         )
         connection.commit()
+
+    print("indexing embeddings")
+    embeddings.index(collectedStrings)
+    print("saving embeddings")
+    embeddings.save("db")
+    print(f"Ingestion complete! You can now run LocalRag.py to query your documents")
 
 if __name__ == "__main__":
     main()
