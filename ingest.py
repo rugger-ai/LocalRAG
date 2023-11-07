@@ -39,8 +39,8 @@ persist_directory = os.environ.get('PERSIST_DIRECTORY')
 source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
 embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME')
 is_gpu_enabled = (os.environ.get('IS_GPU_ENABLED', 'False').lower() == 'true')
-chunk_size = 500
-chunk_overlap = 50
+chunk_size = os.environ.get('CHUNK_SIZE')
+chunk_overlap = os.environ.get('CHUNK_OVERLAP')
 
 
 
