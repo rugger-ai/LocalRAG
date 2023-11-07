@@ -14,6 +14,7 @@ from langchain import PromptTemplate
 from langchain.chains import LLMChain
 import sqlite3
 import pprint
+import time
 
 
 load_dotenv()
@@ -74,7 +75,7 @@ PROMPT = PromptTemplate(
 )
 
 def talk_to_LLM(question, history):
-
+    start_time = time.time()
     # Extract uid of first result
     # search result format: (uid, score)
     # return the top N results
@@ -82,7 +83,7 @@ def talk_to_LLM(question, history):
     cursor = connection.cursor()
 
 
-    uid = embeddings.search(question, 5)
+    uid = embeddings.search(question, 2)
 
     embeddingSearchResults = ""
     
@@ -91,17 +92,20 @@ def talk_to_LLM(question, history):
         cursor.execute(
         'SELECT * FROM chunks LIMIT 1 offset (?)', (uid,))
         results = cursor.fetchall()
-        embeddingSearchResults += str(results)
+        embeddingSearchResults += "\n\n" + str(results)
 
 
     print("Embeddings Search Results:")
-    embeddingSearchResults = embeddingSearchResults.replace(r'\n', '\n')
+    #embeddingSearchResults = embeddingSearchResults.replace(r'\n', '\n')
     print(embeddingSearchResults)
     
     if question != "":
         llmChain = LLMChain(llm=llamallm, prompt=PROMPT)
-        return llmChain.run(question=question, context=embeddingSearchResults)
+        result = llmChain.run(question=question, context=embeddingSearchResults)
+        run_time = time.time() - start_time
+        print("Time to execute: " + str(run_time))
+        return result
         #print("\n\nQuestion: " + question + "\n\nAnswer: " + llmChain.run(question=question, context=embeddingSearchResults)  + "\n\n")
-
+    
 
 gr.ChatInterface(talk_to_LLM).launch()
