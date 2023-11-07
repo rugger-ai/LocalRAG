@@ -83,7 +83,7 @@ def talk_to_LLM(question, history):
     cursor = connection.cursor()
 
 
-    uid = embeddings.search(question, 2)
+    uid = embeddings.search(question, target_source_chunks)
 
     embeddingSearchResults = ""
     
