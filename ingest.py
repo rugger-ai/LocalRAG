@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from multiprocessing import Pool
 from tqdm import tqdm
 import sqlite3
+import pathlib
 
 from langchain.document_loaders import (
     CSVLoader,
@@ -39,8 +40,8 @@ persist_directory = os.environ.get('PERSIST_DIRECTORY')
 source_directory = os.environ.get('SOURCE_DIRECTORY', 'source_documents')
 embeddings_model_name = os.environ.get('EMBEDDINGS_MODEL_NAME')
 is_gpu_enabled = (os.environ.get('IS_GPU_ENABLED', 'False').lower() == 'true')
-chunk_size = os.environ.get('CHUNK_SIZE')
-chunk_overlap = os.environ.get('CHUNK_OVERLAP')
+chunk_size = int(os.environ.get('CHUNK_SIZE'))
+chunk_overlap = int(os.environ.get('CHUNK_OVERLAP'))
 
 
 
@@ -158,34 +159,10 @@ def split_json():
                 data += items
     return data
 
-def main():
-    # Create embeddings
-    """
-    embeddings_kwargs = {'device': 'cuda'} if is_gpu_enabled else {}
-    embeddings = HuggingFaceEmbeddings(model_name=embeddings_model_name, model_kwargs=embeddings_kwargs)
+def main():    
+    pathlib.Path(persist_directory).mkdir(exist_ok=True)
 
-    if does_vectorstore_exist(persist_directory):
-        # Update and store locally vectorstore
-        print(f"Appending to existing vectorstore at {persist_directory}")
-        db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
-        collection = db.get()
-        texts = process_documents([metadata['source'] for metadata in collection['metadatas']])
-        print(f"Creating embeddings. May take some minutes...")
-        db.add_documents(texts)
-    else:
-        # Create and store locally vectorstore
-        print("Creating new vectorstore")
-        texts = process_documents()
-        print(f"Creating embeddings. May take some minutes...")
-        db = Chroma.from_documents(texts, embeddings, persist_directory=persist_directory, client_settings=CHROMA_SETTINGS)
-    db.persist()
-    db = None
-
-    print(f"Ingestion complete! You can now run privateGPT.py to query your documents")
-    """
-    
-    # todo: automatically create database, delete existing one
-    connection = sqlite3.connect("db/embeddings.db")
+    connection = sqlite3.connect(persist_directory + "/embeddings.db")
     cursor = connection.cursor()
     cursor.execute('CREATE TABLE chunks (chunks string)')
 
@@ -218,7 +195,7 @@ def main():
     print("indexing embeddings")
     embeddings.index(collectedStrings)
     print("saving embeddings")
-    embeddings.save("db")
+    embeddings.save(persist_directory)
     print(f"Ingestion complete! You can now run LocalRag.py to query your documents")
 
 if __name__ == "__main__":
